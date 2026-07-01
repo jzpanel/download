@@ -68,6 +68,22 @@ _fetch_text() {
     return 1
 }
 
+# _gunzip_to  解压 gzip 到目标文件；依次尝试 gzip/gunzip/zcat/python，任一可用即成功
+_gunzip_to() {
+    local src="$1" dst="$2"
+    if command -v gzip   &>/dev/null && gzip   -dc "$src" > "$dst" 2>/dev/null; then return 0; fi
+    if command -v gunzip &>/dev/null && gunzip -c  "$src" > "$dst" 2>/dev/null; then return 0; fi
+    if command -v zcat   &>/dev/null && zcat        "$src" > "$dst" 2>/dev/null; then return 0; fi
+    local py
+    for py in python3 python; do
+        if command -v "$py" &>/dev/null && \
+           "$py" -c "import gzip,sys,shutil; shutil.copyfileobj(gzip.open(sys.argv[1],'rb'),open(sys.argv[2],'wb'))" "$src" "$dst" 2>/dev/null; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 # _get_latest_version  官网 API 优先，失败则从下载源 latest.json 兜底
 _get_latest_version() {
     local json v
@@ -478,11 +494,11 @@ _download_and_replace() {
         [ -n "$actual" ] && _ok "校验通过"
     fi
 
-    # 解压 gzip → 二进制
+    # 解压 gzip → 二进制（多解压器兜底）
     _info "解压面板程序..."
-    if ! gzip -dc "$tmp_gz" > "$tmp_bin" 2>/dev/null; then
+    if ! _gunzip_to "$tmp_gz" "$tmp_bin"; then
         rm -f "$tmp_gz" "$tmp_bin"
-        _err "解压失败（gzip 未安装或文件损坏）"
+        _err "解压失败（缺少 gzip/gunzip/zcat/python，或文件损坏）。请安装 gzip 后重试"
         return
     fi
     rm -f "$tmp_gz"

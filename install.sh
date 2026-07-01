@@ -100,6 +100,23 @@ _fetch_text() {
     return 1
 }
 
+# _gunzip_to  解压 gzip 到目标文件；依次尝试 gzip/gunzip/zcat/python，任一可用即成功
+#   参数: src.gz  dst
+_gunzip_to() {
+    local src="$1" dst="$2"
+    if command -v gzip   &>/dev/null && gzip   -dc "$src" > "$dst" 2>/dev/null; then return 0; fi
+    if command -v gunzip &>/dev/null && gunzip -c  "$src" > "$dst" 2>/dev/null; then return 0; fi
+    if command -v zcat   &>/dev/null && zcat        "$src" > "$dst" 2>/dev/null; then return 0; fi
+    local py
+    for py in python3 python; do
+        if command -v "$py" &>/dev/null && \
+           "$py" -c "import gzip,sys,shutil; shutil.copyfileobj(gzip.open(sys.argv[1],'rb'),open(sys.argv[2],'wb'))" "$src" "$dst" 2>/dev/null; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 # ── 生成随机密码（12位，A-Z a-z 0-9 混合）────────────────────
 gen_password() {
     local pwd=""
@@ -691,11 +708,11 @@ download_panel() {
         warn "校验文件不可用（hash 长度: ${#expected}），跳过校验"
     fi
 
-    # 7.4 解压 gzip → 二进制（gzip 由 install_deps 已装）
+    # 7.4 解压 gzip → 二进制（gzip 由 install_deps 已装；多解压器兜底）
     info "解压面板程序..."
-    if ! gzip -dc "$tmp_gz" > "$TMP_BIN" 2>/dev/null; then
+    if ! _gunzip_to "$tmp_gz" "$TMP_BIN"; then
         rm -f "$tmp_gz" "$TMP_BIN"; TMP_BIN=""
-        die "解压失败（gzip 未安装或文件损坏）"
+        die "解压失败（缺少 gzip/gunzip/zcat/python，或文件损坏）。请安装 gzip 后重试: apt/yum install -y gzip"
     fi
     rm -f "$tmp_gz"
 
