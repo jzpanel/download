@@ -18,15 +18,15 @@ jz                                           # 面板管理工具
 latest.json                                  # 版本信息（官网 API 挂了的兜底）
 releases/
   <版本>/                                     # 如 1.0.0（无 v 前缀）
-    panel-linux-amd64
-    panel-linux-amd64.sha256
-    panel-linux-arm64
-    panel-linux-arm64.sha256
+    panel-linux-amd64.gz                      # gzip 压缩的面板二进制
+    panel-linux-amd64.gz.sha256
+    panel-linux-arm64.gz
+    panel-linux-arm64.gz.sha256
 ```
 
-- 版本目录用纯版本号 `1.0.0`，与脚本 `releases/${ver}/panel-linux-${arch}` 对齐。
-- `.sha256` 内容：`<64位hash>  panel-linux-amd64`（脚本取第 1 列，纯 hash 也可）。
-- jsDelivr 单文件上限 50MB；面板二进制约 15-20MB，无碍。
+- 版本目录用纯版本号 `1.0.0`，与脚本 `releases/${ver}/panel-linux-${arch}.gz` 对齐。
+- **二进制以 gzip 压缩入库**：面板二进制约 50MB，超过 jsDelivr 单文件 50MB 上限，压缩后约 20MB，三源（含 jsDelivr）均可服务。脚本下载 `.gz` 后本地 `gunzip -dc` 还原。
+- `.sha256` 校验的是 **`.gz` 文件**（下载物），内容：`<64位hash>  panel-linux-amd64.gz`（脚本取第 1 列）。
 - 主 OSS 也要保持同样的 `releases/...` 结构和 `latest.json`（它是首选源）。
 
 ## 发布新版本流程

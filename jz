@@ -409,7 +409,7 @@ do_upgrade() {
     read -rp "  确认升级？[y/N] " confirm
     [[ "${confirm:-N}" =~ ^[Yy]$ ]] || { _info "已取消"; return; }
 
-    _download_and_replace "releases/${latest}/panel-linux-${bin_suffix}" "$latest"
+    _download_and_replace "releases/${latest}/panel-linux-${bin_suffix}.gz" "$latest"
 }
 
 do_repair() {
@@ -445,37 +445,47 @@ do_repair() {
     read -rp "  确认修复？[y/N] " confirm
     [[ "${confirm:-N}" =~ ^[Yy]$ ]] || { _info "已取消"; return; }
 
-    _download_and_replace "releases/${current}/panel-linux-${bin_suffix}" "$current"
+    _download_and_replace "releases/${current}/panel-linux-${bin_suffix}.gz" "$current"
 }
 
 # ── 公共：下载二进制并替换 ─────────────────────────────────────
-# 参数: relbin(相对路径，如 releases/1.0.0/panel-linux-amd64)  version_label
+# 参数: relgz(相对路径.gz，如 releases/1.0.0/panel-linux-amd64.gz)  version_label
 _download_and_replace() {
-    local relbin="$1"
+    local relgz="$1"
     local version_label="$2"
+    local tmp_gz="/tmp/panel_update_$$.gz"
     local tmp_bin="/tmp/panel_update_$$"
 
-    # 下载（多源故障切换：主 OSS → 国内 jsDelivr → 国外 GitHub）
+    # 下载 gzip 压缩包（多源故障切换：主 OSS → 国内 jsDelivr → 国外 GitHub）
     _info "下载 v${version_label}..."
-    if ! _fetch_file "$relbin" "$tmp_bin"; then
-        rm -f "$tmp_bin"
+    if ! _fetch_file "$relgz" "$tmp_gz"; then
+        rm -f "$tmp_gz"
         _err "下载失败（已尝试全部下载源），请检查网络"
         return
     fi
 
-    # SHA256 校验（多源取校验值）
+    # SHA256 校验（校验下载的 .gz）
     _info "校验文件完整性..."
     local expected actual
-    expected=$(_fetch_text "${relbin}.sha256" | awk '{print $1}' || true)
+    expected=$(_fetch_text "${relgz}.sha256" | awk '{print $1}' || true)
     if [ -n "$expected" ] && [ "${#expected}" -eq 64 ]; then
-        actual=$(sha256sum "$tmp_bin" 2>/dev/null | awk '{print $1}' || true)
+        actual=$(sha256sum "$tmp_gz" 2>/dev/null | awk '{print $1}' || true)
         if [ -n "$actual" ] && [ "$actual" != "$expected" ]; then
-            rm -f "$tmp_bin"
+            rm -f "$tmp_gz"
             _err "SHA256 校验失败，文件可能已损坏"
             return
         fi
         [ -n "$actual" ] && _ok "校验通过"
     fi
+
+    # 解压 gzip → 二进制
+    _info "解压面板程序..."
+    if ! gzip -dc "$tmp_gz" > "$tmp_bin" 2>/dev/null; then
+        rm -f "$tmp_gz" "$tmp_bin"
+        _err "解压失败（gzip 未安装或文件损坏）"
+        return
+    fi
+    rm -f "$tmp_gz"
 
     chmod +x "$tmp_bin"
 

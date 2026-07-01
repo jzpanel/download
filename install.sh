@@ -660,37 +660,46 @@ download_panel() {
     PANEL_VERSION="$latest_ver"
     info "目标版本: v${PANEL_VERSION}"
 
-    # 7.2 下载二进制（多源故障切换：主 OSS → 国内 jsDelivr → 国外 GitHub）
-    #     三源路径一致，_fetch_file 内部逐源尝试，任一成功即停。
-    local relbin="releases/${PANEL_VERSION}/panel-linux-${BIN_SUFFIX}"
-    TMP_BIN="/tmp/panel_install_$$"
-    _fetch_file "$relbin" "$TMP_BIN" \
-        || die "面板下载失败（已尝试全部下载源），请检查网络。路径: ${relbin}"
+    # 7.2 下载二进制（gzip 压缩包，多源故障切换：主 OSS → 国内 jsDelivr → 国外 GitHub）
+    #     压缩以适配 jsDelivr 单文件 50MB 限制；下载后本地 gunzip 还原。
+    local relgz="releases/${PANEL_VERSION}/panel-linux-${BIN_SUFFIX}.gz"
+    local tmp_gz="/tmp/panel_install_$$.gz"
+    TMP_BIN="/tmp/panel_install_$$"   # 解压后的二进制，EXIT trap 负责清理
+    _fetch_file "$relgz" "$tmp_gz" \
+        || { rm -f "$tmp_gz"; die "面板下载失败（已尝试全部下载源），请检查网络。路径: ${relgz}"; }
 
-    # 7.3 SHA256 校验（多源取校验值；hash 必须 64 位十六进制，取不到则跳过而不中止）
+    # 7.3 SHA256 校验（校验下载的 .gz；hash 必须 64 位十六进制，取不到则跳过而不中止）
     info "校验文件完整性..."
     local expected actual
-    expected=$(_fetch_text "${relbin}.sha256" | awk '{print $1}' || true)
+    expected=$(_fetch_text "${relgz}.sha256" | awk '{print $1}' || true)
     if [ -n "$expected" ] && [ "${#expected}" -eq 64 ]; then
         actual=""
         if command -v sha256sum &>/dev/null; then
-            actual=$(sha256sum "$TMP_BIN" 2>/dev/null | awk '{print $1}' || true)
+            actual=$(sha256sum "$tmp_gz" 2>/dev/null | awk '{print $1}' || true)
         elif command -v openssl &>/dev/null; then
-            actual=$(openssl dgst -sha256 "$TMP_BIN" 2>/dev/null | awk '{print $NF}' || true)
+            actual=$(openssl dgst -sha256 "$tmp_gz" 2>/dev/null | awk '{print $NF}' || true)
         fi
         if [ -z "$actual" ]; then
             warn "本机无 sha256sum/openssl，跳过完整性校验"
         elif [ "$actual" = "$expected" ]; then
             ok "SHA256 校验通过"
         else
-            rm -f "$TMP_BIN"; TMP_BIN=""
+            rm -f "$tmp_gz"
             die "SHA256 校验失败（期望 ${expected:0:16}...，实际 ${actual:0:16}...），文件可能已损坏"
         fi
     else
         warn "校验文件不可用（hash 长度: ${#expected}），跳过校验"
     fi
 
-    # 7.4 安装到目标路径
+    # 7.4 解压 gzip → 二进制（gzip 由 install_deps 已装）
+    info "解压面板程序..."
+    if ! gzip -dc "$tmp_gz" > "$TMP_BIN" 2>/dev/null; then
+        rm -f "$tmp_gz" "$TMP_BIN"; TMP_BIN=""
+        die "解压失败（gzip 未安装或文件损坏）"
+    fi
+    rm -f "$tmp_gz"
+
+    # 7.5 安装到目标路径
     mv "$TMP_BIN" "${PANEL_DIR}/bin/panel"
     TMP_BIN=""   # 已移动，清除 EXIT trap 目标
     chmod +x "${PANEL_DIR}/bin/panel"
