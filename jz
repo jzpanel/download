@@ -1,0 +1,667 @@
+#!/bin/bash
+#==============================================================================
+# 极致面板管理工具 (jz)
+# 安装路径: /usr/local/bin/jz
+#
+# 用法:
+#   jz                  交互菜单（推荐）
+#   jz status           查看状态
+#   jz restart          重启面板（同时解除 IP 登录锁定）
+#   jz stop             停止面板
+#   jz start            启动面板
+#   jz log              查看实时日志
+#   jz info             查看访问信息（地址+版本）
+#   jz upgrade          一键升级面板
+#   jz repair           修复面板（重新下载当前版本）
+#==============================================================================
+
+PANEL_BIN="/www/server/panel/bin/panel"
+PANEL_DIR="/www/server/panel"
+SERVICE_NAME="panel"
+
+# ── 颜色 ─────────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+
+# ── 工具函数 ─────────────────────────────────────────────────
+_ok()   { echo -e "${GREEN}✓${NC}  $*"; }
+_err()  { echo -e "${RED}✗${NC}  $*" >&2; }
+_warn() { echo -e "${YELLOW}⚠${NC}  $*"; }
+_info() { echo -e "${BLUE}→${NC}  $*"; }
+
+# ── 下载源（主 OSS → 国内 jsDelivr 加速 → 国外 GitHub 直连，故障切换）──
+# 三源路径一致，切换只换前缀；仓库 github.com/jzpanel/download（main 分支）
+DOWNLOAD_BASES=(
+    "https://download.jzpanel.com"
+    "https://cdn.jsdelivr.net/gh/jzpanel/download@main"
+    "https://raw.githubusercontent.com/jzpanel/download/main"
+)
+
+# _fetch_file  下载相对路径到 out，依次尝试所有源，任一成功即停
+_fetch_file() {
+    local relpath="$1" out="$2"
+    local base url
+    for base in "${DOWNLOAD_BASES[@]}"; do
+        url="${base}/${relpath}"
+        _info "下载: ${url}"
+        if curl -fL --connect-timeout 30 --max-time 600 --progress-bar -o "$out" "$url" 2>&1; then
+            return 0
+        fi
+        rm -f "$out" 2>/dev/null || true
+        _warn "该源不可用，尝试下一个下载源..."
+    done
+    return 1
+}
+
+# _fetch_text  抓取相对路径小文本（sha256 / json），成功 echo 到 stdout
+_fetch_text() {
+    local relpath="$1"
+    local base url data
+    for base in "${DOWNLOAD_BASES[@]}"; do
+        url="${base}/${relpath}"
+        data=$(curl -fsSL --connect-timeout 10 --max-time 20 "$url" 2>/dev/null || true)
+        if [ -n "$data" ]; then
+            printf '%s' "$data"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# _get_latest_version  官网 API 优先，失败则从下载源 latest.json 兜底
+_get_latest_version() {
+    local json v
+    json=$(curl -fsSL --connect-timeout 10 --max-time 15 \
+        "https://jzpanel.com/api/v1/panel/releases/latest" 2>/dev/null || true)
+    v=$(echo "$json" | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
+    if [ -z "$v" ]; then
+        json=$(_fetch_text "latest.json" || true)
+        v=$(echo "$json" | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
+    fi
+    echo "$v"
+}
+
+# ── 前置检查 ─────────────────────────────────────────────────
+_check_root() {
+    [ "$EUID" -eq 0 ] || { _err "请用 root 账号运行: sudo jz"; exit 1; }
+}
+
+_check_installed() {
+    [ -f "$PANEL_BIN" ] || {
+        _err "未找到面板程序，请先安装:"
+        echo "  bash <(curl -fsSL https://download.jzpanel.com/install.sh)"
+        exit 1
+    }
+}
+
+# ── 面板状态 ─────────────────────────────────────────────────
+_panel_active() {
+    systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null
+}
+
+_status_text() {
+    if _panel_active; then
+        echo -e "${GREEN}● 运行中${NC}"
+    else
+        echo -e "${RED}○ 已停止${NC}"
+    fi
+}
+
+_get_version() {
+    local v
+    v=$("$PANEL_BIN" version 2>/dev/null | head -1 | tr -d '[:space:]')
+    echo "${v:-unknown}"
+}
+
+# 版本号缓存（避免每次显示菜单都启动一次 Go 进程）
+_CACHED_VERSION=""
+_get_version_cached() {
+    if [ -z "$_CACHED_VERSION" ]; then
+        _CACHED_VERSION=$(_get_version)
+    fi
+    echo "$_CACHED_VERSION"
+}
+# 升级/修复后调用此函数清除缓存，使下次菜单显示最新版本
+_invalidate_version_cache() {
+    _CACHED_VERSION=""
+}
+
+_get_port() {
+    # 用 grep + sed 替代 grep -P（兼容没有 PCRE 的系统，如 Alpine/BusyBox）
+    local port
+    port=$(grep 'port:' "${PANEL_DIR}/config/config.yaml" 2>/dev/null \
+           | head -1 \
+           | sed 's/.*port:[[:space:]]*//' \
+           | tr -d '"[:space:]')
+    echo "${port:-8888}"
+}
+
+_get_ip() {
+    # 多个外部源依次尝试（与 install.sh 保持一致）
+    curl -sf --connect-timeout 3 --max-time 5 ifconfig.me   2>/dev/null \
+    || curl -sf --connect-timeout 3 --max-time 5 icanhazip.com  2>/dev/null \
+    || curl -sf --connect-timeout 3 --max-time 5 ipinfo.io/ip 2>/dev/null \
+    || hostname -I 2>/dev/null | awk '{print $1}' \
+    || echo "YOUR_SERVER_IP"
+}
+
+# ── 菜单头部 ─────────────────────────────────────────────────
+_header() {
+    local ver port
+    ver=$(_get_version_cached)    # 使用缓存，不重复启动 Go 进程
+    port=$(_get_port)
+
+    echo ""
+    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BOLD}  极致面板管理工具   版本: v${ver}${NC}"
+    echo -e "  状态: $(_status_text)   端口: ${port}"
+    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+}
+
+# ═══════════════════════════════════════════════════
+# 功能实现
+# ═══════════════════════════════════════════════════
+
+do_restart() {
+    _info "重启面板服务..."
+    systemctl restart "$SERVICE_NAME" && _ok "面板已重启" || _err "重启失败，请检查: journalctl -u ${SERVICE_NAME} -n 20"
+}
+
+do_start() {
+    # 已运行时友好提示，而不是报"失败"
+    if _panel_active; then
+        _warn "面板已在运行中，无需启动"
+        return
+    fi
+    _info "启动面板服务..."
+    systemctl start "$SERVICE_NAME" && _ok "面板已启动" || _err "启动失败，请检查: journalctl -u ${SERVICE_NAME} -n 20"
+}
+
+do_stop() {
+    # 已停止时友好提示，而不是报"失败"
+    if ! _panel_active; then
+        _warn "面板已是停止状态"
+        return
+    fi
+    _info "停止面板服务..."
+    systemctl stop "$SERVICE_NAME" && _ok "面板已停止" || _err "停止失败"
+}
+
+do_status() {
+    echo ""
+    echo -e "  服务状态:  $(_status_text)"
+    echo -e "  面板版本:  v$(_get_version)"
+    echo -e "  面板端口:  $(_get_port)"
+    if _panel_active; then
+        local ts
+        ts=$(systemctl show "$SERVICE_NAME" --property=ActiveEnterTimestamp 2>/dev/null | cut -d= -f2)
+        [ -n "$ts" ] && echo -e "  启动时间:  ${ts}"
+    fi
+    echo ""
+}
+
+do_log() {
+    echo ""
+    _info "显示实时日志，Ctrl+C 退出..."
+    echo ""
+    journalctl -u "$SERVICE_NAME" -f --no-pager
+}
+
+do_info() {
+    local ip port ver
+    ip=$(_get_ip)
+    port=$(_get_port)
+    ver=$(_get_version)
+    echo ""
+    echo -e "  ${BOLD}面板地址${NC}    http://${ip}:${port}"
+    echo -e "  ${BOLD}面板版本${NC}    v${ver}"
+    echo -e "  ${BOLD}安装路径${NC}    ${PANEL_DIR}"
+    echo ""
+    _warn "如无法访问，请确认云服务器安全组已开放 TCP ${port} 端口"
+    echo ""
+}
+
+do_reset_credentials() {
+    echo ""
+    echo -e "  ${YELLOW}重置管理员账号（用户名 + 密码）${NC}"
+    echo -e "  ${YELLOW}注意: 修改后所有已登录会话立即失效${NC}"
+    echo ""
+
+    local new_user new_pass confirm_pass
+
+    read -rp "  新用户名 [3-32位，字母数字下划线中划线]: " new_user
+    # 只去掉首尾空格，保留中间内容用于格式校验
+    new_user=$(echo "$new_user" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    if [ -z "$new_user" ] || [ "${#new_user}" -lt 3 ] || [ "${#new_user}" -gt 32 ]; then
+        _err "用户名长度须在 3-32 之间"; return
+    fi
+    # 格式校验：只允许字母、数字、下划线、中划线（与后端规则一致）
+    if ! echo "$new_user" | grep -qE '^[A-Za-z0-9_-]+$'; then
+        _err "用户名只能包含字母、数字、下划线和中划线"; return
+    fi
+
+    read -rp "  新密码 [至少6位]: " new_pass; echo ""
+    if [ -z "$new_pass" ] || [ "${#new_pass}" -lt 6 ]; then
+        _err "密码至少 6 位"; return
+    fi
+
+    read -rp "  确认密码: " confirm_pass; echo ""
+    if [ "$new_pass" != "$confirm_pass" ]; then
+        _err "两次密码不一致"; return
+    fi
+
+    echo ""
+    _info "正在更新账号..."
+    # 密码通过命令行参数传递（需要 root 才能运行 jz，安全性可接受）
+    if "$PANEL_BIN" reset-credentials --username="$new_user" --password="$new_pass"; then
+        :  # 成功，panel 二进制已打印提示
+    else
+        _err "重置失败，请确认面板已正确安装"
+    fi
+}
+
+do_change_port() {
+    echo ""
+    local cur_port new_port
+    cur_port=$(_get_port)
+    echo -e "  当前端口: ${BOLD}${cur_port}${NC}"
+    read -rp "  新端口 [1024-65535]: " new_port
+
+    # 纯数字验证（不用 grep -P）
+    if ! echo "$new_port" | grep -qE '^[0-9]+$'; then
+        _err "请输入有效的端口号"; return
+    fi
+    if [ "$new_port" -lt 1024 ] || [ "$new_port" -gt 65535 ]; then
+        _err "端口号须在 1024-65535 之间"; return
+    fi
+    if [ "$new_port" = "$cur_port" ]; then
+        _warn "端口未变化，无需修改"; return
+    fi
+
+    echo ""
+    _info "正在修改端口..."
+    if "$PANEL_BIN" change-port "$new_port"; then
+        echo ""
+        _warn "端口已写入，重启面板后生效。是否立即重启？[y/N]"
+        read -rp "  " confirm
+        if [[ "${confirm:-N}" =~ ^[Yy]$ ]]; then
+            do_restart
+            echo ""
+            _warn "请确认云服务器安全组已开放新端口 TCP ${new_port}"
+        else
+            _info "记得重启面板后再访问新端口"
+        fi
+    else
+        _err "端口修改失败"
+    fi
+}
+
+do_change_entry() {
+    echo ""
+    _info "安全入口：访问面板时需在地址后加特定路径，防止被扫描到面板"
+    echo -e "  示例: 设置为 abc123 后，访问地址变为 http://ip:port/abc123"
+    echo -e "  留空则清除安全入口（直接通过端口访问）"
+    echo ""
+    read -rp "  新安全入口路径（留空=清除）: " entry
+    # 去掉斜杠和首尾空格（不用 tr -d '[:space:]' 避免删掉字母 s/p/a/c/e）
+    entry=$(echo "$entry" | sed 's|[/]||g; s/^[[:space:]]*//; s/[[:space:]]*$//')
+
+    echo ""
+    if [ -z "$entry" ]; then
+        _info "正在清除安全入口..."
+        if "$PANEL_BIN" clear-entry; then
+            _warn "需重启面板生效。是否立即重启？[y/N]"
+            read -rp "  " confirm
+            [[ "${confirm:-N}" =~ ^[Yy]$ ]] && do_restart
+        fi
+    else
+        # 前端格式预校验（与后端白名单一致：字母、数字、下划线、中划线）
+        if ! echo "$entry" | grep -qE '^[A-Za-z0-9_-]+$'; then
+            _err "安全入口路径只能包含字母、数字、下划线和中划线"; return
+        fi
+        if [ "${#entry}" -gt 64 ]; then
+            _err "安全入口路径不能超过 64 个字符"; return
+        fi
+        _info "正在设置安全入口..."
+        if "$PANEL_BIN" change-entry "$entry"; then
+            _warn "需重启面板生效。是否立即重启？[y/N]"
+            read -rp "  " confirm
+            [[ "${confirm:-N}" =~ ^[Yy]$ ]] && do_restart
+        fi
+    fi
+}
+
+do_unlock_ip() {
+    echo ""
+    _info "IP 登录锁定记录存储在面板内存中，重启面板后自动解除"
+    _warn "重启会短暂中断面板服务（约 3-5 秒）"
+    read -rp "  是否立即重启面板以解除所有 IP 锁定？[y/N] " confirm
+    if [[ "${confirm:-N}" =~ ^[Yy]$ ]]; then
+        do_restart
+        echo ""
+        _ok "面板已重启，所有 IP 锁定已解除"
+    else
+        _info "已取消，锁定将在面板下次重启时自动解除"
+    fi
+    echo ""
+}
+
+do_check_update() {
+    echo ""
+    _info "正在检查最新版本..."
+    local current latest
+    current=$(_get_version_cached)
+
+    latest=$(_get_latest_version)
+
+    if [ -z "$latest" ]; then
+        _warn "无法获取最新版本信息（请检查网络连接）"
+        echo ""
+        return
+    fi
+
+    echo -e "  当前版本: ${BOLD}v${current}${NC}"
+    echo -e "  最新版本: ${BOLD}v${latest}${NC}"
+    echo ""
+
+    if [ "$current" = "$latest" ]; then
+        _ok "当前已是最新版本"
+    else
+        _warn "发现新版本 v${latest}，可使用选项 10 进行升级"
+    fi
+    echo ""
+}
+
+do_upgrade() {
+    echo ""
+    _info "准备升级面板..."
+
+    local arch bin_suffix latest
+    arch=$(uname -m)
+    case "$arch" in
+        x86_64)  bin_suffix="amd64" ;;
+        aarch64) bin_suffix="arm64" ;;
+        *) _err "不支持的架构: $arch"; return ;;
+    esac
+
+    _info "获取最新版本信息..."
+    latest=$(_get_latest_version)
+
+    if [ -z "$latest" ]; then
+        _err "获取版本信息失败，请检查网络连接"
+        return
+    fi
+
+    local current
+    current=$(_get_version_cached)
+    if [ "$current" = "$latest" ]; then
+        _ok "当前已是最新版本 v${latest}，无需升级"
+        echo ""
+        return
+    fi
+
+    echo -e "  ${BOLD}v${current}${NC}  →  ${BOLD}v${latest}${NC}"
+    if _panel_active; then
+        echo -e "  ${YELLOW}升级过程中面板会短暂停止服务（约 10-30 秒）${NC}"
+    fi
+    echo ""
+    read -rp "  确认升级？[y/N] " confirm
+    [[ "${confirm:-N}" =~ ^[Yy]$ ]] || { _info "已取消"; return; }
+
+    _download_and_replace "releases/${latest}/panel-linux-${bin_suffix}" "$latest"
+}
+
+do_repair() {
+    echo ""
+    local current arch bin_suffix
+    current=$(_get_version)
+
+    # 版本未知时请用户指定，避免下载错误 URL
+    if [ "$current" = "unknown" ] || [ -z "$current" ]; then
+        _warn "无法读取当前版本（二进制可能已损坏）"
+        read -rp "  请手动输入需要修复的版本号（如 1.0.0）: " current
+        current=$(echo "$current" | tr -d '[:space:]v')
+        if [ -z "$current" ]; then
+            _err "版本号不能为空"
+            return
+        fi
+        # 格式校验：只允许 数字.数字.数字 格式，防止路径穿越和乱码 URL
+        if ! echo "$current" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            _err "版本号格式不正确，请输入如 1.0.0 的格式"
+            return
+        fi
+    fi
+
+    arch=$(uname -m)
+    case "$arch" in
+        x86_64)  bin_suffix="amd64" ;;
+        aarch64) bin_suffix="arm64" ;;
+        *) _err "不支持的架构: $arch"; return ;;
+    esac
+
+    echo -e "  修复版本: ${BOLD}v${current}${NC}"
+    _warn "将重新下载 v${current} 的二进制文件（不影响数据库和配置）"
+    read -rp "  确认修复？[y/N] " confirm
+    [[ "${confirm:-N}" =~ ^[Yy]$ ]] || { _info "已取消"; return; }
+
+    _download_and_replace "releases/${current}/panel-linux-${bin_suffix}" "$current"
+}
+
+# ── 公共：下载二进制并替换 ─────────────────────────────────────
+# 参数: relbin(相对路径，如 releases/1.0.0/panel-linux-amd64)  version_label
+_download_and_replace() {
+    local relbin="$1"
+    local version_label="$2"
+    local tmp_bin="/tmp/panel_update_$$"
+
+    # 下载（多源故障切换：主 OSS → 国内 jsDelivr → 国外 GitHub）
+    _info "下载 v${version_label}..."
+    if ! _fetch_file "$relbin" "$tmp_bin"; then
+        rm -f "$tmp_bin"
+        _err "下载失败（已尝试全部下载源），请检查网络"
+        return
+    fi
+
+    # SHA256 校验（多源取校验值）
+    _info "校验文件完整性..."
+    local expected actual
+    expected=$(_fetch_text "${relbin}.sha256" | awk '{print $1}' || true)
+    if [ -n "$expected" ] && [ "${#expected}" -eq 64 ]; then
+        actual=$(sha256sum "$tmp_bin" 2>/dev/null | awk '{print $1}' || true)
+        if [ -n "$actual" ] && [ "$actual" != "$expected" ]; then
+            rm -f "$tmp_bin"
+            _err "SHA256 校验失败，文件可能已损坏"
+            return
+        fi
+        [ -n "$actual" ] && _ok "校验通过"
+    fi
+
+    chmod +x "$tmp_bin"
+
+    # 停止面板（systemctl stop 是阻塞的，会等到进程完全退出）
+    _info "停止面板..."
+    systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+
+    # 备份旧二进制（最多保留 3 个，自动清理旧备份）
+    if [ -f "$PANEL_BIN" ]; then
+        cp "$PANEL_BIN" "${PANEL_BIN}.bak_$(date +%Y%m%d_%H%M%S)" 2>/dev/null \
+            && _info "已备份旧版本" || true
+        # 清理超过 3 个的旧备份（按名称排序，最旧的先删）
+        local bak_count
+        bak_count=$(ls "${PANEL_BIN}.bak_"* 2>/dev/null | wc -l || echo 0)
+        if [ "${bak_count:-0}" -gt 3 ]; then
+            ls "${PANEL_BIN}.bak_"* 2>/dev/null | sort | head -n "$((bak_count - 3))" | \
+                xargs rm -f 2>/dev/null || true
+        fi
+    fi
+
+    # 替换
+    _info "替换二进制..."
+    if ! mv "$tmp_bin" "$PANEL_BIN"; then
+        rm -f "$tmp_bin"
+        _err "替换失败，请检查 ${PANEL_DIR}/bin 目录权限"
+        _info "尝试重启旧版本..."
+        if systemctl start "$SERVICE_NAME" 2>/dev/null; then
+            _warn "旧版本已恢复运行"
+        else
+            _err "旧版本恢复失败！请手动检查: journalctl -u ${SERVICE_NAME} -n 30"
+        fi
+        return
+    fi
+    chmod +x "$PANEL_BIN"
+
+    # 启动新版本
+    _info "启动新版本..."
+    systemctl start "$SERVICE_NAME"
+    sleep 2
+
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        _invalidate_version_cache   # 清除版本缓存，菜单下次显示新版本
+        _ok "完成！当前版本: v${version_label}"
+    else
+        _err "面板启动失败，请查看日志: journalctl -u ${SERVICE_NAME} -n 50"
+        _warn "如需回滚，备份文件在: ${PANEL_BIN}.bak_*"
+    fi
+    echo ""
+}
+
+do_uninstall() {
+    echo ""
+    _warn "卸载面板"
+    echo ""
+    echo "  选择卸载方式："
+    echo "    1) 只删除面板程序（保留网站文件 /www/wwwroot）"
+    echo "       注意: 面板数据库和配置也会被删除，重装后需重新配置"
+    echo "    2) 删除全部（包含网站文件，彻底清除）"
+    echo "    3) 取消"
+    echo ""
+    read -rp "  请选择 [1/2/3，默认3]: " answer
+
+    case "${answer:-3}" in
+        1)
+            systemctl stop    "$SERVICE_NAME" 2>/dev/null || true
+            systemctl disable "$SERVICE_NAME" 2>/dev/null || true
+            rm -rf "${PANEL_DIR}/bin" "${PANEL_DIR}/config" \
+                   "${PANEL_DIR}/data" "${PANEL_DIR}/logs"
+            rm -f "/etc/systemd/system/${SERVICE_NAME}.service"
+            systemctl daemon-reload
+            _ok "面板程序已删除，网站文件保留在: /www/wwwroot"
+            echo -e "  ${YELLOW}重装面板后需要重新配置（原有网站记录、应用记录等已清除）${NC}"
+            echo -e "  ${YELLOW}如不再需要 jz 工具，可执行: rm /usr/local/bin/jz${NC}"
+            ;;
+        2)
+            read -rp "  ⚠  输入 yes 确认删除 /www 下所有数据（不可恢复）: " confirm
+            if [ "${confirm:-}" = "yes" ]; then
+                systemctl stop    "$SERVICE_NAME" 2>/dev/null || true
+                systemctl disable "$SERVICE_NAME" 2>/dev/null || true
+                rm -rf "/www"
+                rm -f "/etc/systemd/system/${SERVICE_NAME}.service"
+                systemctl daemon-reload
+                _ok "所有数据已删除"
+                # 最后删除自身（提示在前，删除在后）
+                _warn "jz 工具也将被移除，此后不可再用 jz 命令"
+                rm -f "/usr/local/bin/jz"
+            else
+                _info "已取消"
+            fi
+            ;;
+        *)
+            _info "已取消"
+            ;;
+    esac
+    echo ""
+}
+
+# ═══════════════════════════════════════════════════
+# 菜单
+# ═══════════════════════════════════════════════════
+show_menu() {
+    _header
+    echo -e "  ${BOLD}服务控制${NC}"
+    echo "    1) 重启面板（同时解除所有 IP 登录锁定）"
+    echo "    2) 停止面板"
+    echo "    3) 启动面板"
+    echo "    4) 查看实时日志"
+    echo ""
+    echo -e "  ${BOLD}信息查看${NC}"
+    echo "    5) 查看面板访问信息"
+    echo "    6) 查看服务状态"
+    echo ""
+    echo -e "  ${BOLD}账号安全${NC}"
+    echo "    7) 重置管理员账号（用户名+密码，立即生效）"
+    echo "    8) 修改面板端口"
+    echo "    9) 修改安全入口路径"
+    echo ""
+    echo -e "  ${BOLD}维护升级${NC}"
+    echo "   10) 检查更新"
+    echo "   11) 一键升级面板"
+    echo "   12) 修复面板（重新下载当前版本）"
+    echo ""
+    echo -e "  ${BOLD}其他${NC}"
+    echo "   13) 卸载面板"
+    echo ""
+    echo "    q) 退出"
+    echo ""
+    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+}
+
+run_option() {
+    case "$1" in
+        1|restart)    do_restart ;;
+        2|stop)       do_stop ;;
+        3|start)      do_start ;;
+        4|log)        do_log ;;
+        5|info)       do_info ;;
+        6|status)     do_status ;;
+        7)            do_reset_credentials ;;
+        8)            do_change_port ;;
+        9)            do_change_entry ;;
+        10)           do_check_update ;;
+        11|upgrade)   do_upgrade ;;
+        12|repair)    do_repair ;;
+        13|uninstall) do_uninstall ;;
+        q|quit|exit|0)
+            echo ""
+            exit 0
+            ;;
+        "")
+            # 空输入，重新显示菜单
+            ;;
+        *)
+            _warn "无效选项: $1"
+            ;;
+    esac
+}
+
+# ═══════════════════════════════════════════════════
+# 主入口
+# ═══════════════════════════════════════════════════
+main() {
+    _check_root
+    _check_installed
+
+    # 子命令模式（jz restart / jz status 等）
+    # 注意：只取 $1 作为子命令，其他参数由子命令函数通过 read 交互获取
+    # （子命令不支持非交互参数传入，保持简单）
+    if [ -n "${1:-}" ]; then
+        run_option "$1"
+        exit 0
+    fi
+
+    # 交互菜单模式
+    while true; do
+        show_menu
+        read -rp "  请输入选项: " choice
+        run_option "$choice"
+        # 查看日志和退出不需要暂停
+        if [ "$choice" != "4" ] && [ "$choice" != "q" ] && \
+           [ "$choice" != "quit" ] && [ "$choice" != "exit" ] && \
+           [ "$choice" != "0" ]; then
+            echo ""
+            read -rp "  按 Enter 返回菜单..." _dummy
+        fi
+    done
+}
+
+main "${1:-}"
