@@ -12,49 +12,27 @@
   "artifacts": {
     "compose_aarch64": {
       "path": "runtime/compose/2.29.7/docker-compose-linux-aarch64",
-      "sha256": "6e9fbd5daa20dca5d7d89145081ae8155d68ef2928b497d9f85b54fe0f9dbb2c",
-      "mirrors": [
-        "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-aarch64",
-        "https://ghproxy.net/https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-aarch64",
-        "https://ghfast.top/https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-aarch64"
-      ]
+      "sha256": "6e9fbd5daa20dca5d7d89145081ae8155d68ef2928b497d9f85b54fe0f9dbb2c"
     },
     "compose_x86_64": {
       "path": "runtime/compose/2.29.7/docker-compose-linux-x86_64",
-      "sha256": "383ce6698cd5d5bbf958d2c8489ed75094e34a77d340404d9f32c4ae9e12baf0",
-      "mirrors": [
-        "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64",
-        "https://ghproxy.net/https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64",
-        "https://ghfast.top/https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64"
-      ]
+      "sha256": "383ce6698cd5d5bbf958d2c8489ed75094e34a77d340404d9f32c4ae9e12baf0"
     },
     "docker_amd64": {
       "path": "runtime/docker/27.3.1/docker-amd64.tgz",
-      "sha256": "9b4f6fe406e50f9085ee474c451e2bb5adb119a03591f467922d3b4e2ddf31d3",
-      "mirrors": [
-        "https://mirrors.aliyun.com/docker-ce/linux/static/stable/x86_64/docker-27.3.1.tgz",
-        "https://mirrors.tuna.tsinghua.edu.cn/docker-ce/linux/static/stable/x86_64/docker-27.3.1.tgz",
-        "https://mirrors.ustc.edu.cn/docker-ce/linux/static/stable/x86_64/docker-27.3.1.tgz",
-        "https://download.docker.com/linux/static/stable/x86_64/docker-27.3.1.tgz"
-      ]
+      "sha256": "9b4f6fe406e50f9085ee474c451e2bb5adb119a03591f467922d3b4e2ddf31d3"
     },
     "docker_arm64": {
       "path": "runtime/docker/27.3.1/docker-arm64.tgz",
-      "sha256": "4da6a6c7502b7ab561675a5ff5ac192d9b49d76d0b8847cf17ade246122279f4",
-      "mirrors": [
-        "https://mirrors.aliyun.com/docker-ce/linux/static/stable/aarch64/docker-27.3.1.tgz",
-        "https://mirrors.tuna.tsinghua.edu.cn/docker-ce/linux/static/stable/aarch64/docker-27.3.1.tgz",
-        "https://mirrors.ustc.edu.cn/docker-ce/linux/static/stable/aarch64/docker-27.3.1.tgz",
-        "https://download.docker.com/linux/static/stable/aarch64/docker-27.3.1.tgz"
-      ]
+      "sha256": "4da6a6c7502b7ab561675a5ff5ac192d9b49d76d0b8847cf17ade246122279f4"
     },
     "installer_amd64": {
       "path": "installer/2.0.0/jz-installer-linux-amd64.gz",
-      "sha256": "4125cfb0fb226831ad157c6522f204aa14eeaa7e18c17ddb892aaf790a3dcb97"
+      "sha256": "961bd1e4746c5e6831ec84ea1fd19e6cd91de999906a8edb342f5c73dcd63302"
     },
     "installer_arm64": {
       "path": "installer/2.0.0/jz-installer-linux-arm64.gz",
-      "sha256": "428ad7833e44519855cf8496a18a637b639b528d51c922f17a9bacad22e1cb1e"
+      "sha256": "8d12781ef8cfccd531d0ef5c1a27896807dd3b5001e7c02b04912fb4042a3f6e"
     },
     "jz": {
       "path": "jz",
@@ -69,5 +47,5 @@
       "sha256": "1cfd6cbde2591e97d93b90d150d016c01d49723a95035dc75ff936febae02010"
     }
   },
-  "signature": "a4cTkR0+GjG94BZTYZ7eD4RKwbsjKItUhpK7ATFC+GXk+TZTqNugWmMXVMmbGFe4sdv/yT3/i4tMOIzPZkUjBg=="
+  "signature": "lgq/ubANlafJszTdLl81J+PS3ITXcsH8mlbJctL00nTn0tG5RLHrr77hnGs/JKtPHqHwgcDE6A4RiKhNiDciAg=="
 }

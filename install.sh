@@ -49,20 +49,42 @@ fetch() { # fetch <url> <out>
 }
 
 # 4. 逐源拉 .gz 与 sidecar .sha256
-GOT=0
-for BASE in $SOURCES; do
-  URL="${BASE}/${REL}"
-  log "[INFO] 尝试下载安装器: $BASE"
-  if fetch "$URL" "$TMP_GZ" && [ -s "$TMP_GZ" ]; then
-    # sidecar sha256（同名 .sha256）；拿不到不阻断，但强烈建议存在
-    if fetch "${URL}.sha256" "${TMP_GZ}.sha256" 2>/dev/null; then
-      SUM="$(awk '{print $1; exit}' "${TMP_GZ}.sha256" 2>/dev/null || true)"
+download_installer() {
+  for BASE in $SOURCES; do
+    URL="${BASE}/${REL}"
+    log "[INFO] 尝试下载安装器: $BASE"
+    if fetch "$URL" "$TMP_GZ" && [ -s "$TMP_GZ" ]; then
+      # sidecar sha256（同名 .sha256）；拿不到不阻断，但强烈建议存在
+      if fetch "${URL}.sha256" "${TMP_GZ}.sha256" 2>/dev/null; then
+        SUM="$(awk '{print $1; exit}' "${TMP_GZ}.sha256" 2>/dev/null || true)"
+      fi
+      return 0
     fi
-    GOT=1
-    break
+  done
+  return 1
+}
+
+# 老系统（如 CentOS 7 自带 2014 CA 包）缺新根证书，会导致对现代 HTTPS 站点 TLS 校验失败。
+# 全部源失败时尝试更新系统 CA 证书再重试一次。
+refresh_ca() {
+  log "[INFO] 下载失败，尝试更新系统 CA 证书（老系统证书过期常见）..."
+  if command -v yum >/dev/null 2>&1; then
+    yum -y update ca-certificates >/dev/null 2>&1 || yum -y install ca-certificates >/dev/null 2>&1
+    update-ca-trust extract >/dev/null 2>&1
+  elif command -v apt-get >/dev/null 2>&1; then
+    apt-get -y update >/dev/null 2>&1
+    apt-get -y install --only-upgrade ca-certificates >/dev/null 2>&1 || apt-get -y install ca-certificates >/dev/null 2>&1
+    update-ca-certificates >/dev/null 2>&1
+  elif command -v apk >/dev/null 2>&1; then
+    apk add --no-cache ca-certificates >/dev/null 2>&1
+    update-ca-certificates >/dev/null 2>&1
   fi
-done
-[ "$GOT" = "1" ] || die "所有源均无法下载安装器，请检查网络（国内可设代理）"
+}
+
+if ! download_installer; then
+  refresh_ca
+  download_installer || die "所有源均无法下载安装器，请检查网络（国内可设代理）"
+fi
 
 # 5. 校验 sha256（有 sidecar 才校验）
 if [ -n "$SUM" ] && command -v sha256sum >/dev/null 2>&1; then
