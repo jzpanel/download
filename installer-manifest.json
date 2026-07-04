@@ -1,0 +1,69 @@
+{
+  "installer_version": "2.0.0",
+  "docker_version": "27.3.1",
+  "docker_version_eol": "",
+  "compose_version": "2.29.7",
+  "panel_version": "1.0.0",
+  "sources": [
+    "https://download.jzpanel.com",
+    "https://cdn.jsdelivr.net/gh/jzpanel/download@main",
+    "https://raw.githubusercontent.com/jzpanel/download/main"
+  ],
+  "artifacts": {
+    "compose_aarch64": {
+      "path": "runtime/compose/2.29.7/docker-compose-linux-aarch64",
+      "sha256": "6e9fbd5daa20dca5d7d89145081ae8155d68ef2928b497d9f85b54fe0f9dbb2c",
+      "mirrors": [
+        "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-aarch64",
+        "https://ghproxy.net/https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-aarch64",
+        "https://ghfast.top/https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-aarch64"
+      ]
+    },
+    "compose_x86_64": {
+      "path": "runtime/compose/2.29.7/docker-compose-linux-x86_64",
+      "sha256": "383ce6698cd5d5bbf958d2c8489ed75094e34a77d340404d9f32c4ae9e12baf0",
+      "mirrors": [
+        "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64",
+        "https://ghproxy.net/https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64",
+        "https://ghfast.top/https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64"
+      ]
+    },
+    "docker_amd64": {
+      "path": "runtime/docker/27.3.1/docker-amd64.tgz",
+      "sha256": "9b4f6fe406e50f9085ee474c451e2bb5adb119a03591f467922d3b4e2ddf31d3",
+      "mirrors": [
+        "https://mirrors.aliyun.com/docker-ce/linux/static/stable/x86_64/docker-27.3.1.tgz",
+        "https://mirrors.tuna.tsinghua.edu.cn/docker-ce/linux/static/stable/x86_64/docker-27.3.1.tgz",
+        "https://mirrors.ustc.edu.cn/docker-ce/linux/static/stable/x86_64/docker-27.3.1.tgz",
+        "https://download.docker.com/linux/static/stable/x86_64/docker-27.3.1.tgz"
+      ]
+    },
+    "docker_arm64": {
+      "path": "runtime/docker/27.3.1/docker-arm64.tgz",
+      "sha256": "4da6a6c7502b7ab561675a5ff5ac192d9b49d76d0b8847cf17ade246122279f4",
+      "mirrors": [
+        "https://mirrors.aliyun.com/docker-ce/linux/static/stable/aarch64/docker-27.3.1.tgz",
+        "https://mirrors.tuna.tsinghua.edu.cn/docker-ce/linux/static/stable/aarch64/docker-27.3.1.tgz",
+        "https://mirrors.ustc.edu.cn/docker-ce/linux/static/stable/aarch64/docker-27.3.1.tgz",
+        "https://download.docker.com/linux/static/stable/aarch64/docker-27.3.1.tgz"
+      ]
+    },
+    "installer_amd64": {
+      "path": "installer/2.0.0/jz-installer-linux-amd64.gz",
+      "sha256": "d550c3663f9ade928f45fd6140da216fb3818bddc59cc017149e8f4634cd98e8"
+    },
+    "installer_arm64": {
+      "path": "installer/2.0.0/jz-installer-linux-arm64.gz",
+      "sha256": "69118e12f062c416f496743d3a4d77ba333b5efb004c7d37671950b696ca994b"
+    },
+    "panel_amd64": {
+      "path": "releases/1.0.0/panel-linux-amd64.gz",
+      "sha256": "d90148822834d24d7c4e5c898b2037a7bc6209b5a223e427934138892dfcbfee"
+    },
+    "panel_arm64": {
+      "path": "releases/1.0.0/panel-linux-arm64.gz",
+      "sha256": "1cfd6cbde2591e97d93b90d150d016c01d49723a95035dc75ff936febae02010"
+    }
+  },
+  "signature": "NwKl7HI86HzmqbXcVrit+gunnl/1//fARqRRnl6/v3Xd26/bbiuvi4f6xyojvZ0CVUiQ1Yl0j/zOsLRe/yDkAw=="
+}
