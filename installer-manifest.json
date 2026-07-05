@@ -40,12 +40,12 @@
     },
     "panel_amd64": {
       "path": "releases/1.0.0/panel-linux-amd64.gz",
-      "sha256": "1d11e760307702dee66c1e45b49590f4b2007a52ffb140c46adfc58cfd68ec6a"
+      "sha256": "7ec0d398bafd3731ee4516a343de0b17b2a4eb44719cb08169c28d6d68b604ba"
     },
     "panel_arm64": {
       "path": "releases/1.0.0/panel-linux-arm64.gz",
-      "sha256": "043ac7b5fb34b6cccb25cda8ec53943b5fc4f5c0a13373db0c218640de9588f7"
+      "sha256": "07bcb8481f61ef8e7a3dca3863436fe65b4b5f78ab07c63018bc390391c33dd6"
     }
   },
-  "signature": "hhf/yfI1tvZUbfRfsI1eWU2OLNlc/PypDPQ52qO1o9daKWw6EZNjx9MFY1OsomqNUgWmkAvKNa5sPO2RIjAcCQ=="
+  "signature": "kuOWJoprbhQ2g7XpQ/hd3ENIXerygPV/Vh1bGfzOSuHt/mAmSDQT9Vv7j4ohiE4XI/LFHk9LzdhQ9PRm6cYZDg=="
 }
