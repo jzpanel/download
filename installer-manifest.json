@@ -28,11 +28,11 @@
     },
     "installer_amd64": {
       "path": "installer/2.0.0/jz-installer-linux-amd64.gz",
-      "sha256": "8da390e52ccbc735c2ba87cdb3b904a446ce1c2e11f3dd16d737ef22eb6d9e97"
+      "sha256": "9ecef018605154e267cd417c9d24fc28ac282eaa687fdc8a953a81834e62aa91"
     },
     "installer_arm64": {
       "path": "installer/2.0.0/jz-installer-linux-arm64.gz",
-      "sha256": "85e8917215dec365cdbb9d92de85ced606091c4ede88fc35db1a4506d9052cea"
+      "sha256": "fbb906aab73a0d681b0b09c88c3224caf62276d993a547fae971ef805a3c949c"
     },
     "jz": {
       "path": "jz",
@@ -47,5 +47,5 @@
       "sha256": "7d759d693d05a067120c3964ae4c9dafd72d9bfcb5d731f4834c36c592cc8148"
     }
   },
-  "signature": "38yDUSVcUpJFtogl0+/qtDO/kaI9bIkBL8i2gofhDs0EUa7oos9Qrn8zQT+HDOxPnl3LyzNWzESsM6fLI4h2Bg=="
+  "signature": "IyCiHwtv/eNirHy4RUDmM/8RmWYzKF8SfnhIMo5/liS2HnKo21YaQ3CmFR5I0vMC4mknPDIo+4Vo3LyDTyguDQ=="
 }
